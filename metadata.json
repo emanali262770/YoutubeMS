@@ -1,0 +1,6 @@
+{
+  "name": "YouTube Management System",
+  "description": "Multi-channel YouTube management dashboard with role-based access control, content workflow tracking, and channel-based analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
