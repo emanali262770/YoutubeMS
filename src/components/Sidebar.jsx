@@ -6,7 +6,6 @@ import {
   FileText,
   Clock,
   Users,
-  Settings,
   ChevronRight,
   ShieldAlert,
   CheckCircle2,
@@ -111,6 +110,7 @@ export default function Sidebar({
                   onClick={() => {
                     setActiveTab('content');
                     setSelectedChannelFilter(ch.id);
+                    setSelectedStatusFilter('all');
                   }}
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-normal transition-colors cursor-pointer ${
                     activeTab === 'content' && selectedChannelFilter === ch.id
@@ -152,39 +152,43 @@ export default function Sidebar({
             </button>
 
             <div className="pl-3 space-y-0.5 border-l border-slate-800 ml-3">
-              <button
-                onClick={() => {
-                  setActiveTab('content');
-                  setSelectedStatusFilter('Pending');
-                }}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
-                  activeTab === 'content' && selectedStatusFilter === 'Pending'
-                    ? 'bg-amber-950/50 text-amber-300 font-medium'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  <span>Pending</span>
-                </span>
-              </button>
+              {(isAdmin || currentUser?.role === 'subadmin') && (
+                <>
+                  <button
+                    onClick={() => {
+                      setActiveTab('content');
+                      setSelectedStatusFilter('Pending');
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
+                      activeTab === 'content' && selectedStatusFilter === 'Pending'
+                        ? 'bg-amber-950/50 text-amber-300 font-medium'
+                        : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500" />
+                      <span>Pending</span>
+                    </span>
+                  </button>
 
-              <button
-                onClick={() => {
-                  setActiveTab('content');
-                  setSelectedStatusFilter('In Progress');
-                }}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
-                  activeTab === 'content' && selectedStatusFilter === 'In Progress'
-                    ? 'bg-blue-950/50 text-blue-300 font-medium'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  <span>In Progress</span>
-                </span>
-              </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('content');
+                      setSelectedStatusFilter('In Progress');
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
+                      activeTab === 'content' && selectedStatusFilter === 'In Progress'
+                        ? 'bg-blue-950/50 text-blue-300 font-medium'
+                        : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                      <span>In Progress</span>
+                    </span>
+                  </button>
+                </>
+              )}
 
               <button
                 onClick={() => {
@@ -241,18 +245,29 @@ export default function Sidebar({
                 <Users className="w-4 h-4 text-purple-400" />
                 <span>Users & Roles</span>
               </button>
+            </div>
+          </div>
+        )}
 
+        {/* Subadmin Management Section */}
+        {!isAdmin && currentUser.role === 'subadmin' && (
+          <div>
+            <div className="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              User Management
+            </div>
+
+            <div className="space-y-1">
               <button
-                onClick={() => setActiveTab('settings')}
+                onClick={() => setActiveTab('users')}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
-                  activeTab === 'settings'
+                  activeTab === 'users'
                     ? 'bg-slate-800 text-white font-semibold'
                     : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                 }`}
-                id="nav-settings-btn"
+                id="nav-users-btn"
               >
-                <Settings className="w-4 h-4 text-cyan-400" />
-                <span>Settings</span>
+                <Users className="w-4 h-4 text-purple-400" />
+                <span>Users & Roles</span>
               </button>
             </div>
           </div>

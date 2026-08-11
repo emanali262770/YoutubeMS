@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import {
+  createUser,
+  deleteUser as deleteUserApi,
+  getUsers,
+  updateUserChannels
+} from '../services/userService';
 import {
   Users,
   UserPlus,
@@ -13,16 +19,17 @@ import {
   Calendar,
   Key,
   Layers,
-  X
+  X,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export default function UserManagementView() {
   const {
-    users,
     channels,
     addUser,
     updateUser,
-    roles,
+    deleteUser,
     isAdmin,
     currentUser
   } = useApp();
@@ -34,33 +41,168 @@ export default function UserManagementView() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Script Writer');
+  const [role, setRole] = useState('subadmin');
   const [status, setStatus] = useState('Active');
   const [selectedChannelIds, setSelectedChannelIds] = useState([]);
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState(null);
+  const [apiUsers, setApiUsers] = useState([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState('');
+  const [accessError, setAccessError] = useState('');
+  const [isSavingAccess, setIsSavingAccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const tableUsers = apiUsers;
+
+  const formatRole = (value) => {
+    const roleMap = {
+      admin: 'Admin',
+      subadmin: 'Subadmin',
+      script_writer: 'Script Writer',
+      editor: 'Editor',
+      uploader: 'Uploader'
+    };
+
+    return roleMap[value] || value || 'Subadmin';
+  };
+
+  const formatStatus = (value) => {
+    if (!value) return 'Active';
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  };
+
+  const formatLastLogin = (value) => {
+    if (!value) return 'Never';
+    return new Date(value).toLocaleString([], {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatUser = (item) => {
+    const user = item?.user || item;
+
+    return {
+      id: item?.id || item?._id || user?.id || user?._id,
+      fullName: user?.fullName || user?.name || user?.email || 'User',
+      email: user?.email || '',
+      avatarText: user?.avatarText || user?.fullName?.charAt(0) || 'U',
+      role: formatRole(item?.role || user?.role),
+      status: formatStatus(item?.accountStatus || item?.status || user?.accountStatus || user?.status),
+      assignedChannelIds: item?.assignedChannelIds || item?.assignedChannels || user?.assignedChannelIds || user?.assignedChannels || [],
+      lastLogin: formatLastLogin(item?.lastLogin || user?.lastLogin),
+      avatarColor: item?.avatarColor || user?.avatarColor || 'bg-purple-600'
+    };
+  };
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      setIsLoadingUsers(true);
+      setUsersError('');
+
+      try {
+        const response = await getUsers();
+        const usersList = response?.users || response?.data?.users || response?.data || response;
+        setApiUsers(Array.isArray(usersList) ? usersList.map(formatUser) : []);
+      } catch (err) {
+        setUsersError(err.response?.data?.message || 'Users load nahi ho sake.');
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    };
+
+    loadUsers();
+  }, []);
 
   const handleOpenAdd = () => {
     setFullName('');
     setEmail('');
-    setPassword('SecurePass123!');
-    setRole('Script Writer');
+    setPassword('');
+    setRole('subadmin');
     setStatus('Active');
     setSelectedChannelIds([channels[0]?.id || '']);
+    setFormError('');
     setShowAddModal(true);
   };
 
-  const handleCreateUser = (e) => {
+  const handleCreateUser = async (e) => {
     e.preventDefault();
-    if (!fullName.trim() || !email.trim()) return;
+    if (!fullName.trim() || !email.trim() || !password.trim()) return;
 
-    addUser({
-      fullName: fullName.trim(),
-      email: email.trim(),
-      role,
-      status,
-      assignedChannelIds: role === 'Admin' ? channels.map(c => c.id) : selectedChannelIds
-    });
+    setFormError('');
+    setIsSaving(true);
 
-    setShowAddModal(false);
+    try {
+      const payload = {
+        fullName: fullName.trim(),
+        email: email.trim(),
+        password,
+        role
+      };
+      const response = await createUser(payload);
+      const apiUser = response?.user || response?.data?.user || response?.data || response;
+      const newUser = formatUser({
+        ...apiUser,
+        fullName: apiUser?.fullName || payload.fullName,
+        email: apiUser?.email || payload.email,
+        role: apiUser?.role || payload.role,
+        status: apiUser?.status || status,
+        assignedChannelIds: apiUser?.assignedChannelIds || apiUser?.assignedChannels || selectedChannelIds
+      });
+
+      setApiUsers(prev => [newUser, ...prev]);
+      addUser(newUser);
+
+      setShowAddModal(false);
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'User create nahi ho saka.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    setDeletingUserId(userId);
+
+    try {
+      await deleteUserApi(userId);
+      setApiUsers(prev => prev.filter(user => user.id !== userId));
+      deleteUser(userId);
+    } catch (err) {
+      alert(err.response?.data?.message || 'User delete nahi ho saka.');
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
+  const handleSaveChannelAccess = async () => {
+    const assignedChannels = selectedChannelIds.filter(Boolean);
+
+    setAccessError('');
+    setIsSavingAccess(true);
+
+    try {
+      const response = await updateUserChannels(editingUserId, assignedChannels);
+      const apiUser = response?.user || response?.data?.user || response?.data || response;
+      const updatedChannelIds = apiUser?.assignedChannelIds || apiUser?.assignedChannels || assignedChannels;
+
+      setApiUsers(prev => prev.map(user => (
+        user.id === editingUserId
+          ? { ...user, assignedChannelIds: updatedChannelIds }
+          : user
+      )));
+      updateUser(editingUserId, { assignedChannelIds: updatedChannelIds });
+      setEditingUserId(null);
+    } catch (err) {
+      setAccessError(err.response?.data?.message || 'Channel access update nahi ho saka.');
+    } finally {
+      setIsSavingAccess(false);
+    }
   };
 
   const toggleChannelSelection = (channelId) => {
@@ -81,7 +223,7 @@ export default function UserManagementView() {
               User Management & Access Control
             </h2>
             <span className="bg-purple-100 text-purple-800 font-bold text-xs px-2.5 py-0.5 rounded-full">
-              {users.length} Users
+              {tableUsers.length} Users
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
@@ -111,6 +253,11 @@ export default function UserManagementView() {
 
       {/* Users Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        {usersError && (
+          <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
+            {usersError}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
@@ -124,7 +271,23 @@ export default function UserManagementView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {users.map((u) => {
+              {isLoadingUsers && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    Loading users...
+                  </td>
+                </tr>
+              )}
+
+              {!isLoadingUsers && tableUsers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    No users found.
+                  </td>
+                </tr>
+              )}
+
+              {!isLoadingUsers && tableUsers.map((u) => {
                 const assignedChans = u.role === 'Admin'
                   ? channels
                   : channels.filter(c => (u.assignedChannelIds || []).includes(c.id));
@@ -135,7 +298,7 @@ export default function UserManagementView() {
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2.5">
                         <div className={`w-8 h-8 ${u.avatarColor || 'bg-slate-600'} text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0`}>
-                          {u.fullName.charAt(0)}
+                          {u.avatarText || u.fullName.charAt(0)}
                         </div>
                         <div>
                           <div className="font-bold text-slate-900">{u.fullName}</div>
@@ -205,16 +368,26 @@ export default function UserManagementView() {
 
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right">
-                      {isAdmin && (
-                        <button
-                          onClick={() => {
-                            setEditingUserId(u.id);
-                            setSelectedChannelIds(u.assignedChannelIds || []);
-                          }}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-medium text-[11px] transition-colors cursor-pointer"
-                        >
-                          Manage Access
-                        </button>
+                      {(isAdmin || currentUser.role === 'subadmin') && (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingUserId(u.id);
+                              setSelectedChannelIds(u.assignedChannelIds || []);
+                              setAccessError('');
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-medium text-[11px] transition-colors cursor-pointer"
+                          >
+                            Manage Access
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(u.id)}
+                            disabled={deletingUserId === u.id || currentUser.id === u.id}
+                            className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded font-medium text-[11px] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {deletingUserId === u.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -276,13 +449,22 @@ export default function UserManagementView() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg pr-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -292,44 +474,15 @@ export default function UserManagementView() {
                     onChange={(e) => setRole(e.target.value)}
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg font-bold"
                   >
-                    <option value="Admin">Admin (Full Access)</option>
-                    <option value="Script Writer">Script Writer</option>
-                    <option value="Researcher">Researcher</option>
-                    <option value="Editor">Editor</option>
-                    <option value="Uploader">Uploader</option>
+                    <option value="subadmin">Subadmin</option>
+                    <option value="script_writer">Script Writer</option>
+                    <option value="editor">Editor</option>
+                    <option value="uploader">Uploader</option>
                   </select>
                 </div>
               </div>
 
-              {/* Multi-Select Assigned Channels */}
-              {role !== 'Admin' && (
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Assigned Channel Access (Multi-Select)
-                  </label>
-                  <div className="p-3 bg-slate-50 border border-slate-300 rounded-xl space-y-2 max-h-40 overflow-y-auto">
-                    {channels.map((ch) => {
-                      const isChecked = selectedChannelIds.includes(ch.id);
-                      return (
-                        <label
-                          key={ch.id}
-                          className="flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer select-none hover:bg-slate-100 p-1 rounded"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleChannelSelection(ch.id)}
-                            className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                          />
-                          <span>{ch.avatar}</span>
-                          <span className="font-bold">{ch.name}</span>
-                          <span className="text-slate-400 text-[10px]">({ch.category})</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {formError && <p className="text-sm font-medium text-red-600">{formError}</p>}
 
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
                 <button
@@ -341,10 +494,11 @@ export default function UserManagementView() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+                  disabled={isSaving}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <UserPlus className="w-4 h-4" />
-                  <span>Create Account</span>
+                  <span>{isSaving ? 'Creating...' : 'Create Account'}</span>
                 </button>
               </div>
             </form>
@@ -391,21 +545,24 @@ export default function UserManagementView() {
                 })}
               </div>
 
+              {accessError && (
+                <p className="text-xs font-medium text-red-600">{accessError}</p>
+              )}
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setEditingUserId(null)}
-                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
+                  disabled={isSavingAccess}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    updateUser(editingUserId, { assignedChannelIds: selectedChannelIds });
-                    setEditingUserId(null);
-                  }}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-xs"
+                  onClick={handleSaveChannelAccess}
+                  disabled={isSavingAccess}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-xs disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  Save Access Rules
+                  {isSavingAccess ? 'Saving...' : 'Save Access Rules'}
                 </button>
               </div>
             </div>

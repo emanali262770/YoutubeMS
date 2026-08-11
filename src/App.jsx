@@ -8,20 +8,29 @@ import ChannelsView from './components/ChannelsView';
 import ContentManagementView from './components/ContentManagementView';
 import UserManagementView from './components/UserManagementView';
 import ActivityHistoryView from './components/ActivityHistoryView';
-import SettingsView from './components/SettingsView';
 import ContentDetailsModal from './components/ContentDetailsModal';
 import CreateContentModal from './components/CreateContentModal';
 import CreateChannelModal from './components/CreateChannelModal';
 import LoginScreen from './components/LoginScreen';
+import { logoutUser } from './services/authService';
 
 function AppContent() {
-  const { isAdmin, setCurrentUserId, users } = useApp();
+  const {
+    contentList,
+    isAdmin,
+    loadChannels,
+    loadContentOptions,
+    loadNotifications,
+    setCurrentUserId,
+    setLoggedInUser,
+    users
+  } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Navigation states
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'channels' | 'content' | 'users' | 'activity' | 'settings'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'channels' | 'content' | 'users' | 'activity'
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
   const [globalSearch, setGlobalSearch] = useState('');
@@ -29,11 +38,23 @@ function AppContent() {
   // Modal states
   const [selectedContentId, setSelectedContentId] = useState(null);
   const [showCreateContentModal, setShowCreateContentModal] = useState(false);
+  const [editingContentId, setEditingContentId] = useState(null);
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
+  const editingContent = contentList.find((item) => item.id === editingContentId);
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('ytms-current-user-id');
-    if (storedUserId) {
+    const storedUser = localStorage.getItem('ytms-current-user');
+
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setLoggedInUser(parsedUser);
+        setIsAuthenticated(true);
+      } catch {
+        localStorage.removeItem('ytms-current-user');
+      }
+    } else if (storedUserId) {
       const match = users.find((user) => user.id === storedUserId);
       if (match) {
         setCurrentUserId(storedUserId);
@@ -51,12 +72,24 @@ function AppContent() {
       setActiveTab('users');
     } else if (path.startsWith('/activity')) {
       setActiveTab('activity');
-    } else if (path.startsWith('/settings')) {
-      setActiveTab('settings');
     } else {
       setActiveTab('dashboard');
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    loadChannels().catch((err) => {
+      console.error(err.response?.data?.message || 'Channels load nahi ho sake.');
+    });
+    loadContentOptions().catch((err) => {
+      console.error(err.response?.data?.message || 'Content options load nahi ho sake.');
+    });
+    loadNotifications().catch((err) => {
+      console.error(err.response?.data?.message || 'Notifications load nahi ho sake.');
+    });
+  }, [isAuthenticated]);
 
   const handleNavigateToContent = (channelId = 'all', status = 'all') => {
     setSelectedChannelFilter(channelId);
@@ -78,16 +111,58 @@ function AppContent() {
       navigate('/users');
     } else if (tab === 'activity') {
       navigate('/activity');
-    } else if (tab === 'settings') {
-      navigate('/settings');
     }
   };
 
-  const handleLogin = (userId) => {
-    setCurrentUserId(userId);
-    localStorage.setItem('ytms-current-user-id', userId);
+  const getLoginPayloadUser = (payload) => {
+    const apiUser = payload?.user || payload?.data?.user || payload;
+    const role = apiUser?.role || 'Admin';
+    const userId = apiUser?.id || apiUser?._id || apiUser?.email || 'api-user';
+    const matchedUser = users.find((user) => user.email === apiUser?.email);
+    const assignedChannelIds = apiUser?.assignedChannelIds || apiUser?.assignedChannels || [];
+
+    return {
+      id: matchedUser?.id || userId,
+      fullName: apiUser?.fullName || apiUser?.name || apiUser?.username || apiUser?.email || 'Admin',
+      email: apiUser?.email || '',
+      role: role.toLowerCase() === 'admin' ? 'Admin' : role,
+      status: apiUser?.status || 'Active',
+      assignedChannelIds: matchedUser?.assignedChannelIds || assignedChannelIds || [],
+      lastLogin: 'Just now',
+      avatarColor: matchedUser?.avatarColor || 'bg-purple-600'
+    };
+  };
+
+  const handleLogin = (payload) => {
+    const loginUser = getLoginPayloadUser(payload);
+    const token = payload?.token || payload?.data?.token;
+
+    setLoggedInUser(loginUser);
+    localStorage.setItem('ytms-current-user-id', loginUser.id);
+    localStorage.setItem('ytms-current-user', JSON.stringify(loginUser));
+
+    if (token) {
+      localStorage.setItem('ytms-auth-token', token);
+    }
+
     setIsAuthenticated(true);
     navigate('/dashboard');
+  };
+
+  const clearSession = () => {
+    localStorage.removeItem('ytms-auth-token');
+    localStorage.removeItem('ytms-current-user-id');
+    localStorage.removeItem('ytms-current-user');
+    setIsAuthenticated(false);
+    navigate('/dashboard');
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } finally {
+      clearSession();
+    }
   };
 
   if (!isAuthenticated) {
@@ -101,6 +176,7 @@ function AppContent() {
         setSearchQuery={setGlobalSearch}
         onOpenCreateModal={() => setShowCreateContentModal(true)}
         onOpenContent={(id) => setSelectedContentId(id)}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 flex w-full mx-auto">
@@ -155,6 +231,7 @@ function AppContent() {
                   globalSearch={globalSearch}
                   onOpenCreateModal={() => setShowCreateContentModal(true)}
                   onOpenContentDetails={(id) => setSelectedContentId(id)}
+                  onOpenEditContent={(id) => setEditingContentId(id)}
                 />
               }
             />
@@ -163,7 +240,6 @@ function AppContent() {
               path="/activity"
               element={<ActivityHistoryView onOpenContentDetails={(id) => setSelectedContentId(id)} />}
             />
-            <Route path="/settings" element={<SettingsView />} />
           </Routes>
         </main>
       </div>
@@ -175,10 +251,14 @@ function AppContent() {
         />
       )}
 
-      {showCreateContentModal && (
+      {(showCreateContentModal || editingContent) && (
         <CreateContentModal
-          onClose={() => setShowCreateContentModal(false)}
+          onClose={() => {
+            setShowCreateContentModal(false);
+            setEditingContentId(null);
+          }}
           defaultChannelId={selectedChannelFilter !== 'all' ? selectedChannelFilter : ''}
+          initialContent={editingContent}
         />
       )}
 

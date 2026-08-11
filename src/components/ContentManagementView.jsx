@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { updateContent } from '../services/contentService';
 import {
   FileText,
   Search,
@@ -16,7 +17,9 @@ import {
   ChevronDown,
   Sparkles,
   RefreshCw,
-  Tag
+  Tag,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 export default function ContentManagementView({
@@ -26,15 +29,20 @@ export default function ContentManagementView({
   setSelectedStatusFilter,
   globalSearch,
   onOpenCreateModal,
-  onOpenContentDetails
+  onOpenContentDetails,
+  onOpenEditContent
 }) {
   const {
+    contentList,
+    contentCount,
     accessibleContent,
     accessibleChannels,
-    users,
-    updateContentItem,
+    contentOptionUsers,
+    loadContentItems,
+    deleteContentItem,
+    channels,
     currentUser,
-    channels
+    isAdmin
   } = useApp();
 
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'kanban'
@@ -42,40 +50,64 @@ export default function ContentManagementView({
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [userFilter, setUserFilter] = useState('all');
   const [contentTypeFilter, setContentTypeFilter] = useState('all');
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [contentError, setContentError] = useState('');
+  const [deletingContentId, setDeletingContentId] = useState(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState(null);
 
-  const searchQuery = (localSearch || globalSearch || '').toLowerCase();
+  const searchQuery = localSearch || globalSearch || '';
+  const isCompletedTab = selectedStatusFilter === 'Completed';
+  const normalizedRole = String(currentUser?.role || '').toLowerCase().replace(/\s+/g, '_');
+  const canModifyContent = !['editor', 'uploader'].includes(normalizedRole);
+  const filteredContent = isCompletedTab ? contentList : accessibleContent;
+  const displayCount = isCompletedTab ? contentCount : filteredContent.length;
+  const filterParams = useMemo(() => ({
+    search: searchQuery || undefined,
+    channel: selectedChannelFilter,
+    status: selectedStatusFilter,
+    priority: priorityFilter,
+    assignedUser: userFilter
+  }), [searchQuery, selectedChannelFilter, selectedStatusFilter, priorityFilter, userFilter]);
 
-  // Filter content items according to search & multi-select filters
-  const filteredContent = accessibleContent.filter((item) => {
-    // Channel filter
-    if (selectedChannelFilter !== 'all' && item.channelId !== selectedChannelFilter) {
-      return false;
+  useEffect(() => {
+    setIsLoadingContent(true);
+    setContentError('');
+
+    loadContentItems(filterParams)
+      .catch((err) => {
+        setContentError(err.response?.data?.message || 'Content load nahi ho saka.');
+      })
+      .finally(() => setIsLoadingContent(false));
+  }, [filterParams]);
+
+  const handleDeleteContent = async (item) => {
+    const confirmed = window.confirm(`Delete "${item.title}"?`);
+    if (!confirmed) return;
+
+    setDeletingContentId(item.id);
+    setContentError('');
+
+    try {
+      await deleteContentItem(item.id);
+    } catch (err) {
+      setContentError(err.response?.data?.message || 'Content delete nahi ho saka.');
+    } finally {
+      setDeletingContentId(null);
     }
-    // Status filter
-    if (selectedStatusFilter !== 'all' && item.status !== selectedStatusFilter) {
-      return false;
+  };
+
+  const handleStatusChange = async (itemId, newStatus) => {
+    setUpdatingStatusId(itemId);
+
+    try {
+      await updateContent(itemId, { status: newStatus });
+      await loadContentItems(filterParams);
+    } catch (err) {
+      setContentError(err.response?.data?.message || 'Status update nahi ho saka.');
+    } finally {
+      setUpdatingStatusId(null);
     }
-    // Priority filter
-    if (priorityFilter !== 'all' && item.priority !== priorityFilter) {
-      return false;
-    }
-    // User filter
-    if (userFilter !== 'all' && item.assignedUserId !== userFilter) {
-      return false;
-    }
-    // Content type
-    if (contentTypeFilter !== 'all' && item.contentType !== contentTypeFilter) {
-      return false;
-    }
-    // Text search
-    if (searchQuery) {
-      const matchTitle = item.title.toLowerCase().includes(searchQuery);
-      const matchCreator = (item.sourceCreator || '').toLowerCase().includes(searchQuery);
-      const matchId = item.id.toLowerCase().includes(searchQuery);
-      if (!matchTitle && !matchCreator && !matchId) return false;
-    }
-    return true;
-  });
+  };
 
   // Kanban Columns
   const kanbanColumns = [
@@ -94,7 +126,7 @@ export default function ContentManagementView({
               Content Workflow
             </h2>
             <span className="bg-red-100 text-red-800 font-bold text-xs px-2.5 py-0.5 rounded-full">
-              {filteredContent.length} Items
+              {displayCount} Items
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
@@ -125,14 +157,16 @@ export default function ContentManagementView({
             </button>
           </div>
 
-          <button
-            onClick={onOpenCreateModal}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            id="new-content-btn"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Content</span>
-          </button>
+          {canModifyContent && ((isAdmin || currentUser?.role === 'subadmin') || selectedStatusFilter !== 'Completed') && (
+            <button
+              onClick={onOpenCreateModal}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              id="new-content-btn"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Content</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -208,9 +242,9 @@ export default function ContentManagementView({
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500"
             >
               <option value="all">All Assigned Users</option>
-              {users.map((u) => (
+              {contentOptionUsers.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.fullName} ({u.role})
+                  {u.label}
                 </option>
               ))}
             </select>
@@ -222,61 +256,105 @@ export default function ContentManagementView({
       {viewMode === 'table' ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className={`${isCompletedTab ? 'min-w-[1560px]' : 'min-w-[1120px]'} w-full text-left text-xs table-fixed border-collapse`}>
+              <colgroup>
+                <col className={isCompletedTab ? 'w-[320px]' : 'w-[360px]'} />
+                <col className="w-[130px]" />
+                <col className="w-[130px]" />
+                <col className="w-[90px]" />
+                <col className="w-[70px]" />
+                <col className="w-[120px]" />
+                <col className="w-[150px]" />
+                {isCompletedTab && (
+                  <>
+                    <col className="w-[130px]" />
+                    <col className="w-[170px]" />
+                    <col className="w-[120px]" />
+                  </>
+                )}
+                <col className="w-[190px]" />
+              </colgroup>
               <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4">ID & Title</th>
-                  <th className="py-3 px-4">Channel</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Priority</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Assigned To</th>
-                  <th className="py-3 px-4">Source Creator</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-3 px-4 align-middle">ID & Title</th>
+                  <th className="py-3 px-4 align-middle">Channel</th>
+                  <th className="py-3 px-4 align-middle">Status</th>
+                  <th className="py-3 px-4 align-middle">Priority</th>
+                  <th className="py-3 px-4 align-middle">Type</th>
+                  <th className="py-3 px-4 align-middle">Assigned To</th>
+                  <th className="py-3 px-4 align-middle">Source Creator</th>
+                  {isCompletedTab && (
+                    <>
+                      <th className="py-3 px-4 align-middle">Completed Stage</th>
+                      <th className="py-3 px-4 align-middle">Completed At</th>
+                      <th className="py-3 px-4 align-middle">Completed By</th>
+                    </>
+                  )}
+                  <th className="py-3 px-4 text-right align-middle">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredContent.length === 0 ? (
+                {contentError && (
                   <tr>
-                    <td colSpan="8" className="py-12 text-center text-slate-400">
+                    <td colSpan={isCompletedTab ? 11 : 8} className="py-4 px-4 text-center text-red-600 font-medium">
+                      {contentError}
+                    </td>
+                  </tr>
+                )}
+
+                {isLoadingContent ? (
+                  <tr>
+                    <td colSpan={isCompletedTab ? 11 : 8} className="py-12 text-center text-slate-400">
+                      Loading content...
+                    </td>
+                  </tr>
+                ) : !contentError && filteredContent.length === 0 ? (
+                  <tr>
+                    <td colSpan={isCompletedTab ? 11 : 8} className="py-12 text-center text-slate-400">
                       No content items found matching current filters.
                     </td>
                   </tr>
                 ) : (
                   filteredContent.map((item) => {
-                    const channel = channels.find((c) => c.id === item.channelId);
-                    const assignedUser = users.find((u) => u.id === item.assignedUserId);
+                    const channel = item.channel || channels.find((c) => c.id === item.channelId);
+                    const assignedUser = item.assignedUser || contentOptionUsers.find((u) => u.id === item.assignedUserId);
+                    const completedByUser = typeof item.completedBy === 'object'
+                      ? item.completedBy
+                      : contentOptionUsers.find((u) => u.id === item.completedBy);
+                    const completedAt = item.completedAt
+                      ? new Date(item.completedAt).toLocaleString()
+                      : '';
 
                     return (
                       <tr
                         key={item.id}
-                        className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                        className="hover:bg-slate-50/80 transition-colors cursor-pointer group align-top"
                         onClick={() => onOpenContentDetails(item.id)}
                       >
                         {/* ID & Title */}
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-900 group-hover:text-red-600 transition-colors">
+                        <td className="py-4 px-4 align-top">
+                          <div className="font-bold text-slate-900 group-hover:text-red-600 transition-colors leading-snug break-words">
                             {item.title}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            {item.id} • Created {item.createdDate}
+                          <div className="text-[10px] text-slate-400 font-mono mt-1">
+                          • Created {item.createdDate}
                           </div>
                         </td>
 
                         {/* Channel */}
-                        <td className="py-3.5 px-4">
-                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-800 px-2 py-1 rounded font-medium">
-                            <span>{channel?.avatar || '📺'}</span>
-                            <span>{channel?.name || 'Unknown Channel'}</span>
+                        <td className="py-4 px-4 align-top">
+                          <span className="inline-flex max-w-full items-center gap-1 bg-slate-100 text-slate-800 px-2 py-1 rounded font-medium">
+                            <span className="truncate">{channel?.name || 'Unknown Channel'}</span>
                           </span>
                         </td>
 
                         {/* Status dropdown inline */}
-                        <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-4 px-4 align-top" onClick={(e) => e.stopPropagation()}>
                           <select
                             value={item.status}
-                            onChange={(e) => updateContentItem(item.id, { status: e.target.value })}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border cursor-pointer focus:outline-none ${
+                            onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                            disabled={isCompletedTab || updatingStatusId === item.id}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border cursor-pointer focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed ${
                               item.status === 'Completed'
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                                 : item.status === 'In Progress'
@@ -291,7 +369,7 @@ export default function ContentManagementView({
                         </td>
 
                         {/* Priority */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-4 px-4 align-top">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                               item.priority === 'High'
@@ -306,16 +384,16 @@ export default function ContentManagementView({
                         </td>
 
                         {/* Type */}
-                        <td className="py-3.5 px-4 font-medium text-slate-600">
+                        <td className="py-4 px-4 align-top font-medium text-slate-600">
                           {item.contentType}
                         </td>
 
                         {/* Assigned To */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-4 px-4 align-top">
                           {assignedUser ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full ${assignedUser.avatarColor}`} />
-                              <span className="font-semibold text-slate-800">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className={`w-2 h-2 shrink-0 rounded-full ${assignedUser.avatarColor || 'bg-slate-500'}`} />
+                              <span className="truncate font-semibold text-slate-800">
                                 {assignedUser.fullName}
                               </span>
                             </div>
@@ -325,21 +403,59 @@ export default function ContentManagementView({
                         </td>
 
                         {/* Source Creator */}
-                        <td className="py-3.5 px-4 text-slate-500 truncate max-w-[150px]">
-                          {item.sourceCreator || 'N/A'}
+                        <td className="py-4 px-4 align-top text-slate-500">
+                          <div className="truncate" title={item.sourceCreator || 'N/A'}>
+                            {item.sourceCreator || 'N/A'}
+                          </div>
                         </td>
 
-                        {/* Action */}
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenContentDetails(item.id);
-                            }}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-[11px] font-medium transition-colors"
-                          >
-                            Details
-                          </button>
+                        {isCompletedTab && (
+                          <>
+                            <td className="py-4 px-4 align-top">
+                              <span className="inline-flex max-w-full rounded bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                                <span className="truncate">{item.completedStage || 'N/A'}</span>
+                              </span>
+                            </td>
+                            <td className="py-4 px-4 align-top text-slate-500 whitespace-nowrap">
+                              {completedAt || 'N/A'}
+                            </td>
+                            <td className="py-4 px-4 align-top">
+                              <span className="block truncate font-semibold text-slate-800">
+                                {completedByUser?.fullName || completedByUser?.name || completedByUser?.email || 'N/A'}
+                              </span>
+                            </td>
+                          </>
+                        )}
+
+                        {/* Actions */}
+                        <td className="py-4 px-4 text-right align-top" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                            <button
+                              onClick={() => onOpenContentDetails(item.id)}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-[11px] font-medium transition-colors"
+                            >
+                              Details
+                            </button>
+                            {!isCompletedTab && canModifyContent && (item.status === 'Pending' || isAdmin || currentUser?.role === 'subadmin') && (
+                              <>
+                                <button
+                                  onClick={() => onOpenEditContent(item.id)}
+                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-medium transition-colors inline-flex items-center gap-1"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteContent(item)}
+                                  disabled={deletingContentId === item.id}
+                                  className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px] font-medium transition-colors inline-flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>{deletingContentId === item.id ? 'Deleting...' : 'Delete'}</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -376,8 +492,8 @@ export default function ContentManagementView({
                     </div>
                   ) : (
                     columnItems.map((item) => {
-                      const channel = channels.find((c) => c.id === item.channelId);
-                      const assignedUser = users.find((u) => u.id === item.assignedUserId);
+                      const channel = item.channel || channels.find((c) => c.id === item.channelId);
+                      const assignedUser = item.assignedUser || contentOptionUsers.find((u) => u.id === item.assignedUserId);
 
                       return (
                         <div

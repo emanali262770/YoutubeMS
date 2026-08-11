@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { createChannel } from '../services/channelService';
 import { X, Tv, Plus } from 'lucide-react';
 
 export default function CreateChannelModal({ onClose }) {
@@ -7,25 +8,47 @@ export default function CreateChannelModal({ onClose }) {
 
   const [name, setName] = useState('');
   const [language, setLanguage] = useState('English');
-  const [category, setCategory] = useState('Revenge Stories');
-  const [description, setDescription] = useState('');
-  const [subscribers, setSubscribers] = useState('100K');
+  const [category, setCategory] = useState('');
+  const [contentType, setContentType] = useState('long');
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [avatar, setAvatar] = useState('🔥');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    addChannel({
-      name: name.trim(),
+    const payload = {
+      channelName: name.trim(),
       language,
-      category: category.trim(),
-      description: description.trim(),
-      subscribers,
-      avatar
-    });
+      categoryNiche: category.trim(),
+      contentType,
+      channelAvatarEmoji: avatar
+    };
 
-    onClose();
+    setFormError('');
+    setIsSaving(true);
+
+    try {
+      const response = await createChannel(payload);
+      const apiChannel = response?.channel || response?.data?.channel || response?.data || response;
+
+      addChannel({
+        ...apiChannel,
+        id: apiChannel?.id || apiChannel?._id,
+        name: apiChannel?.name || apiChannel?.channelName || payload.channelName,
+        language: apiChannel?.language || payload.language,
+        category: apiChannel?.category || apiChannel?.categoryNiche || payload.categoryNiche,
+        contentType: apiChannel?.contentType || payload.contentType,
+        avatar: apiChannel?.avatar || apiChannel?.channelAvatarEmoji || payload.channelAvatarEmoji
+      });
+
+      onClose();
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'Channel create nahi ho saka.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -89,14 +112,15 @@ export default function CreateChannelModal({ onClose }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Subscriber Count</label>
-              <input
-                type="text"
-                placeholder="e.g. 500K"
-                value={subscribers}
-                onChange={(e) => setSubscribers(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg"
-              />
+              <label className="block font-bold text-slate-700 mb-1">Content Type</label>
+              <select
+                value={contentType}
+                onChange={(e) => setContentType(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg font-medium"
+              >
+                <option value="long">Long Content</option>
+                <option value="short">Short Content</option>
+              </select>
             </div>
 
             <div>
@@ -116,31 +140,24 @@ export default function CreateChannelModal({ onClose }) {
             </div>
           </div>
 
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Channel Description</label>
-            <textarea
-              rows="3"
-              placeholder="Brief overview of channel content theme..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg"
-            />
-          </div>
+          {formError && <p className="text-sm font-medium text-red-600">{formError}</p>}
 
           <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-xl"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+              disabled={isSaving}
+              className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-70"
             >
               <Plus className="w-4 h-4" />
-              <span>Create Channel</span>
+              <span>{isSaving ? 'Creating...' : 'Create Channel'}</span>
             </button>
           </div>
         </form>

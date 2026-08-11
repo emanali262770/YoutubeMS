@@ -7,22 +7,19 @@ import {
   UserCheck,
   ShieldCheck,
   Youtube,
-  Tv,
   ChevronDown,
-  Lock,
-  Layers
+  LogOut
 } from 'lucide-react';
 
 export default function Header({
   searchQuery,
   setSearchQuery,
   onOpenCreateModal,
-  onOpenContent
+  onOpenContent,
+  onLogout
 }) {
   const {
     currentUser,
-    users,
-    setCurrentUserId,
     isAdmin,
     accessibleChannels,
     channels
@@ -33,7 +30,6 @@ export default function Header({
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
       <div className=" mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Left Brand Title */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-red-600 text-white rounded-xl flex items-center justify-center shadow-sm">
             <Youtube className="w-6 h-6" />
@@ -56,7 +52,6 @@ export default function Header({
           </div>
         </div>
 
-        {/* Search Bar */}
         <div className="hidden md:flex flex-1 max-w-md relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -69,28 +64,17 @@ export default function Header({
           />
         </div>
 
-        {/* Right Actions & User Switcher */}
         <div className="flex items-center gap-3">
-          {/* Quick Add Content */}
-          <button
-            onClick={onOpenCreateModal}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white font-medium text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
-            id="add-content-header-btn"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>New Content</span>
-          </button>
+         
 
-          {/* Notifications */}
           <NotificationsPopover onOpenContent={onOpenContent} />
 
-          {/* Active User Switcher (For live testing Admin & Normal User roles) */}
           <div className="relative">
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
               className="flex items-center gap-2 p-1.5 pl-2 pr-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-left transition-colors cursor-pointer"
-              title="Switch user role perspective"
-              id="user-perspective-switcher"
+              title="Account menu"
+              id="user-account-menu"
             >
               <div
                 className={`w-7 h-7 ${currentUser.avatarColor || 'bg-purple-600'} text-white rounded-md text-xs font-bold flex items-center justify-center`}
@@ -120,61 +104,43 @@ export default function Header({
                   onClick={() => setShowUserDropdown(false)}
                 />
                 <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2 text-slate-800">
-                  <div className="p-2 border-b border-slate-100 mb-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Switch User Perspective
-                    </span>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Select a profile to test channel access rules & role permissions.
-                    </p>
+                  <div className="p-3 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-10 h-10 ${currentUser.avatarColor || 'bg-purple-600'} text-white rounded-lg text-sm font-bold flex items-center justify-center`}
+                      >
+                        {currentUser.fullName.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-1">
+                          {currentUser.fullName}
+                          {isAdmin ? (
+                            <ShieldCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                          ) : (
+                            <UserCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate">
+                          {currentUser.email || currentUser.role}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {currentUser.role}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    {users.map((user) => {
-                      const isSelected = user.id === currentUser.id;
-                      const userChansCount = user.role === 'Admin'
-                        ? channels.length
-                        : (user.assignedChannelIds || []).length;
-
-                      return (
-                        <button
-                          key={user.id}
-                          onClick={() => {
-                            setCurrentUserId(user.id);
-                            setShowUserDropdown(false);
-                          }}
-                          className={`w-full flex items-center justify-between p-2 rounded-lg text-xs text-left transition-colors cursor-pointer ${
-                            isSelected
-                              ? 'bg-red-50 text-red-900 font-semibold border border-red-200'
-                              : 'hover:bg-slate-50 text-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-6 h-6 ${user.avatarColor || 'bg-slate-600'} text-white rounded-md text-[10px] font-bold flex items-center justify-center`}
-                            >
-                              {user.fullName.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="font-medium text-slate-900 flex items-center gap-1">
-                                {user.fullName}
-                                {user.role === 'Admin' && (
-                                  <span className="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.2 rounded font-semibold">
-                                    ADMIN
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[10px] text-slate-500">
-                                {user.role} • {userChansCount} channels
-                              </div>
-                            </div>
-                          </div>
-                          {isSelected && (
-                            <span className="w-2 h-2 rounded-full bg-red-600" />
-                          )}
-                        </button>
-                      );
-                    })}
+                  <div className="p-2">
+                    <button
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        onLogout();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Logout</span>
+                    </button>
                   </div>
                 </div>
               </>

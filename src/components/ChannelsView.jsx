@@ -5,13 +5,8 @@ import {
   Plus,
   Globe,
   Tag,
-  Users,
   FileText,
-  Search,
-  ExternalLink,
-  ShieldCheck,
-  CheckCircle,
-  AlertCircle
+  Search
 } from 'lucide-react';
 
 export default function ChannelsView({
@@ -19,19 +14,27 @@ export default function ChannelsView({
   onOpenCreateChannel
 }) {
   const {
-    channels,
     accessibleChannels,
     accessibleContent,
-    users,
     isAdmin
   } = useApp();
 
   const [searchFilter, setSearchFilter] = useState('');
+  const formatContentType = (value) => value === 'short' ? 'Short Content' : 'Long Content';
+  const formatDate = (value) => {
+    if (!value) return 'N/A';
+    return new Date(value).toLocaleDateString([], {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit'
+    });
+  };
 
   const filteredChannels = accessibleChannels.filter(ch =>
     ch.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
     ch.category.toLowerCase().includes(searchFilter.toLowerCase()) ||
-    ch.language.toLowerCase().includes(searchFilter.toLowerCase())
+    ch.language.toLowerCase().includes(searchFilter.toLowerCase()) ||
+    ch.contentType.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
   return (
@@ -87,11 +90,6 @@ export default function ChannelsView({
           const inProgressCount = channelContent.filter(c => c.status === 'In Progress').length;
           const completedCount = channelContent.filter(c => c.status === 'Completed').length;
 
-          // Team members with access to this channel
-          const assignedTeam = users.filter(u =>
-            u.role === 'Admin' || (u.assignedChannelIds || []).includes(channel.id)
-          );
-
           return (
             <div
               key={channel.id}
@@ -116,6 +114,9 @@ export default function ChannelsView({
                           <Tag className="w-3 h-3 text-slate-400" />
                           {channel.category}
                         </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-red-700 bg-red-50 px-2 py-0.5 rounded font-bold">
+                          {formatContentType(channel.contentType)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -125,9 +126,20 @@ export default function ChannelsView({
                   </span>
                 </div>
 
-                <p className="text-xs text-slate-600 line-clamp-2 my-3">
-                  {channel.description}
-                </p>
+                <div className="grid grid-cols-2 gap-2 my-3 text-[11px]">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                    <div className="text-slate-400 font-semibold uppercase">Created By</div>
+                    <div className="mt-0.5 font-bold text-slate-800 truncate">
+                      {channel.createdBy?.fullName || 'N/A'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                    <div className="text-slate-400 font-semibold uppercase">Created On</div>
+                    <div className="mt-0.5 font-bold text-slate-800">
+                      {formatDate(channel.createdAt)}
+                    </div>
+                  </div>
+                </div>
 
                 {/* Metrics */}
                 <div className="grid grid-cols-3 gap-2 my-4 bg-slate-50 p-3 rounded-xl text-center border border-slate-100">
@@ -145,25 +157,7 @@ export default function ChannelsView({
                   </div>
                 </div>
 
-                {/* Team Members assigned */}
-                <div className="mb-4">
-                  <div className="text-[11px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between">
-                    <span>Assigned Team Access ({assignedTeam.length})</span>
-                  </div>
-                  <div className="flex items-center flex-wrap gap-1">
-                    {assignedTeam.map((u) => (
-                      <span
-                        key={u.id}
-                        title={`${u.fullName} (${u.role})`}
-                        className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200"
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${u.avatarColor || 'bg-slate-500'}`} />
-                        <span className="font-medium">{u.fullName}</span>
-                        <span className="text-slate-400">({u.role})</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
+               
               </div>
 
               {/* Action Button */}
