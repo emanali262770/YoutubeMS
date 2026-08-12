@@ -59,13 +59,14 @@ export function AppProvider({ children }) {
   }, [users, currentUserId]);
 
   const isAdmin = currentUser.role === "Admin";
+  const hasAllChannelAccess = isAdmin || currentUser.allChannelAccess || currentUser.assignedChannelIds === null;
 
   // Accessible channels based on User Channel Access Rule
   const accessibleChannels = useMemo(() => {
-    if (isAdmin) return channels;
+    if (hasAllChannelAccess) return channels;
     const assigned = currentUser.assignedChannelIds || [];
     return channels.filter(ch => assigned.includes(ch.id));
-  }, [channels, currentUser, isAdmin]);
+  }, [channels, currentUser, hasAllChannelAccess]);
 
   const accessibleChannelIds = useMemo(() => {
     return accessibleChannels.map(ch => ch.id);
@@ -349,6 +350,10 @@ export function AppProvider({ children }) {
     setChannels(prev => [...prev, channelObj]);
     // Automatically assign admin to new channel
     setUsers(prev => prev.map(u => {
+      if (u.allChannelAccess || u.assignedChannelIds === null) {
+        return u;
+      }
+
       if (u.role === 'Admin') {
         return { ...u, assignedChannelIds: [...new Set([...u.assignedChannelIds, id])] };
       }
@@ -367,7 +372,8 @@ export function AppProvider({ children }) {
       email: newUser.email,
       role: newUser.role,
       status: newUser.status || "Active",
-      assignedChannelIds: newUser.assignedChannelIds || [],
+      assignedChannelIds: newUser.assignedChannelIds ?? [],
+      allChannelAccess: Boolean(newUser.allChannelAccess || newUser.assignedChannelIds === null),
       lastLogin: "Never",
       avatarColor: colors[users.length % colors.length]
     };
@@ -390,6 +396,7 @@ export function AppProvider({ children }) {
     setLoggedInUser,
     currentUser,
     isAdmin,
+    hasAllChannelAccess,
     channels,
     accessibleChannels,
     contentList,

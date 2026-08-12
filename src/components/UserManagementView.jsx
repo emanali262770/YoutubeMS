@@ -55,6 +55,26 @@ export default function UserManagementView() {
   const [showPassword, setShowPassword] = useState(false);
 
   const tableUsers = apiUsers;
+  const canManageUsers = isAdmin || String(currentUser?.role || '').toLowerCase() === 'subadmin';
+
+  const normalizeAssignedChannelIds = (assignedChannels) => {
+    if (assignedChannels === null) return null;
+    if (!Array.isArray(assignedChannels)) return [];
+
+    return assignedChannels
+      .map((channel) => channel?.id || channel?._id || channel)
+      .filter(Boolean);
+  };
+
+  const hasAllChannelAccess = (user) => {
+    const normalizedRole = String(user?.role || '').toLowerCase();
+    return Boolean(
+      user?.allChannelAccess ||
+      user?.assignedChannelIds === null ||
+      normalizedRole === 'admin' ||
+      normalizedRole === 'subadmin'
+    );
+  };
 
   const formatRole = (value) => {
     const roleMap = {
@@ -86,6 +106,11 @@ export default function UserManagementView() {
 
   const formatUser = (item) => {
     const user = item?.user || item;
+    const assignedChannels = item?.assignedChannelIds
+      ?? item?.assignedChannels
+      ?? user?.assignedChannelIds
+      ?? user?.assignedChannels
+      ?? [];
 
     return {
       id: item?.id || item?._id || user?.id || user?._id,
@@ -94,7 +119,8 @@ export default function UserManagementView() {
       avatarText: user?.avatarText || user?.fullName?.charAt(0) || 'U',
       role: formatRole(item?.role || user?.role),
       status: formatStatus(item?.accountStatus || item?.status || user?.accountStatus || user?.status),
-      assignedChannelIds: item?.assignedChannelIds || item?.assignedChannels || user?.assignedChannelIds || user?.assignedChannels || [],
+      assignedChannelIds: normalizeAssignedChannelIds(assignedChannels),
+      allChannelAccess: Boolean(item?.allChannelAccess || user?.allChannelAccess || assignedChannels === null),
       lastLogin: formatLastLogin(item?.lastLogin || user?.lastLogin),
       avatarColor: item?.avatarColor || user?.avatarColor || 'bg-purple-600'
     };
@@ -152,7 +178,7 @@ export default function UserManagementView() {
         email: apiUser?.email || payload.email,
         role: apiUser?.role || payload.role,
         status: apiUser?.status || status,
-        assignedChannelIds: apiUser?.assignedChannelIds || apiUser?.assignedChannels || selectedChannelIds
+        assignedChannelIds: apiUser?.assignedChannelIds ?? apiUser?.assignedChannels ?? selectedChannelIds
       });
 
       setApiUsers(prev => [newUser, ...prev]);
@@ -189,14 +215,16 @@ export default function UserManagementView() {
     try {
       const response = await updateUserChannels(editingUserId, assignedChannels);
       const apiUser = response?.user || response?.data?.user || response?.data || response;
-      const updatedChannelIds = apiUser?.assignedChannelIds || apiUser?.assignedChannels || assignedChannels;
+      const updatedAssignedChannels = apiUser?.assignedChannelIds ?? apiUser?.assignedChannels ?? assignedChannels;
+      const updatedChannelIds = normalizeAssignedChannelIds(updatedAssignedChannels);
+      const allChannelAccess = Boolean(apiUser?.allChannelAccess || updatedAssignedChannels === null);
 
       setApiUsers(prev => prev.map(user => (
         user.id === editingUserId
-          ? { ...user, assignedChannelIds: updatedChannelIds }
+          ? { ...user, assignedChannelIds: updatedChannelIds, allChannelAccess }
           : user
       )));
-      updateUser(editingUserId, { assignedChannelIds: updatedChannelIds });
+      updateUser(editingUserId, { assignedChannelIds: updatedChannelIds, allChannelAccess });
       setEditingUserId(null);
     } catch (err) {
       setAccessError(err.response?.data?.message || 'Channel access update nahi ho saka.');
@@ -212,6 +240,9 @@ export default function UserManagementView() {
         : [...prev, channelId]
     );
   };
+
+  const editingUser = tableUsers.find((user) => user.id === editingUserId);
+  const editingUserHasAllChannelAccess = hasAllChannelAccess(editingUser);
 
   return (
     <div className="space-y-6">
@@ -288,7 +319,8 @@ export default function UserManagementView() {
               )}
 
               {!isLoadingUsers && tableUsers.map((u) => {
-                const assignedChans = u.role === 'Admin'
+                const userHasAllChannelAccess = hasAllChannelAccess(u);
+                const assignedChans = userHasAllChannelAccess
                   ? channels
                   : channels.filter(c => (u.assignedChannelIds || []).includes(c.id));
 
@@ -339,7 +371,7 @@ export default function UserManagementView() {
 
                     {/* Assigned Channels */}
                     <td className="py-3.5 px-4">
-                      {u.role === 'Admin' ? (
+                      {userHasAllChannelAccess ? (
                         <span className="text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded text-[10px]">
                           All Channels Access
                         </span>
@@ -368,12 +400,12 @@ export default function UserManagementView() {
 
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right">
-                      {(isAdmin || currentUser.role === 'subadmin') && (
+                      {canManageUsers && (
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => {
                               setEditingUserId(u.id);
-                              setSelectedChannelIds(u.assignedChannelIds || []);
+                              setSelectedChannelIds(userHasAllChannelAccess ? channels.map((ch) => ch.id) : u.assignedChannelIds || []);
                               setAccessError('');
                             }}
                             className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-medium text-[11px] transition-colors cursor-pointer"
@@ -519,22 +551,29 @@ export default function UserManagementView() {
 
             <div className="p-5 space-y-4 text-xs">
               <p className="text-slate-600">
-                Check or uncheck channels to update channel-level authorization for this team member.
+                {editingUserHasAllChannelAccess
+                  ? 'This team member has all channels access from their role. Existing and future channels are included automatically.'
+                  : 'Check or uncheck channels to update channel-level authorization for this team member.'}
               </p>
 
               <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 {channels.map((ch) => {
-                  const isChecked = selectedChannelIds.includes(ch.id);
+                  const isChecked = editingUserHasAllChannelAccess || selectedChannelIds.includes(ch.id);
                   return (
                     <label
                       key={ch.id}
-                      className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 cursor-pointer hover:bg-slate-50"
+                      className={`flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 ${
+                        editingUserHasAllChannelAccess
+                          ? 'cursor-not-allowed opacity-80'
+                          : 'cursor-pointer hover:bg-slate-50'
+                      }`}
                     >
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => toggleChannelSelection(ch.id)}
+                          disabled={editingUserHasAllChannelAccess}
                           className="rounded text-purple-600 focus:ring-purple-500"
                         />
                         <span className="font-bold text-slate-900">{ch.avatar} {ch.name}</span>
@@ -555,15 +594,17 @@ export default function UserManagementView() {
                   disabled={isSavingAccess}
                   className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  Cancel
+                  {editingUserHasAllChannelAccess ? 'Close' : 'Cancel'}
                 </button>
-                <button
-                  onClick={handleSaveChannelAccess}
-                  disabled={isSavingAccess}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-xs disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isSavingAccess ? 'Saving...' : 'Save Access Rules'}
-                </button>
+                {!editingUserHasAllChannelAccess && (
+                  <button
+                    onClick={handleSaveChannelAccess}
+                    disabled={isSavingAccess}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-xs disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isSavingAccess ? 'Saving...' : 'Save Access Rules'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

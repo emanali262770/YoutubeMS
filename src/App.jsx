@@ -28,6 +28,7 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
 
   // Navigation states
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'channels' | 'content' | 'users' | 'activity'
@@ -45,22 +46,27 @@ function AppContent() {
   useEffect(() => {
     const storedUserId = localStorage.getItem('ytms-current-user-id');
     const storedUser = localStorage.getItem('ytms-current-user');
+    let hasValidSession = false;
 
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         setLoggedInUser(parsedUser);
-        setIsAuthenticated(true);
+        hasValidSession = true;
       } catch {
         localStorage.removeItem('ytms-current-user');
+        localStorage.removeItem('ytms-current-user-id');
       }
     } else if (storedUserId) {
       const match = users.find((user) => user.id === storedUserId);
       if (match) {
         setCurrentUserId(storedUserId);
-        setIsAuthenticated(true);
+        hasValidSession = true;
       }
     }
+
+    setIsAuthenticated(hasValidSession);
+    setIsAuthChecked(true);
 
     const path = location.pathname;
 
@@ -119,7 +125,10 @@ function AppContent() {
     const role = apiUser?.role || 'Admin';
     const userId = apiUser?.id || apiUser?._id || apiUser?.email || 'api-user';
     const matchedUser = users.find((user) => user.email === apiUser?.email);
-    const assignedChannelIds = apiUser?.assignedChannelIds || apiUser?.assignedChannels || [];
+    const assignedChannels = apiUser?.assignedChannelIds ?? apiUser?.assignedChannels ?? [];
+    const assignedChannelIds = assignedChannels === null
+      ? null
+      : assignedChannels.map?.((channel) => channel?.id || channel?._id || channel) || [];
 
     return {
       id: matchedUser?.id || userId,
@@ -127,7 +136,8 @@ function AppContent() {
       email: apiUser?.email || '',
       role: role.toLowerCase() === 'admin' ? 'Admin' : role,
       status: apiUser?.status || 'Active',
-      assignedChannelIds: matchedUser?.assignedChannelIds || assignedChannelIds || [],
+      assignedChannelIds: matchedUser?.assignedChannelIds ?? assignedChannelIds,
+      allChannelAccess: Boolean(apiUser?.allChannelAccess || assignedChannels === null),
       lastLogin: 'Just now',
       avatarColor: matchedUser?.avatarColor || 'bg-purple-600'
     };
@@ -146,7 +156,7 @@ function AppContent() {
     }
 
     setIsAuthenticated(true);
-    navigate('/dashboard');
+    navigate('/dashboard', { replace: true });
   };
 
   const clearSession = () => {
@@ -154,7 +164,7 @@ function AppContent() {
     localStorage.removeItem('ytms-current-user-id');
     localStorage.removeItem('ytms-current-user');
     setIsAuthenticated(false);
-    navigate('/dashboard');
+    navigate('/login', { replace: true });
   };
 
   const handleLogout = async () => {
@@ -165,8 +175,18 @@ function AppContent() {
     }
   };
 
+  if (!isAuthChecked) {
+    return null;
+  }
+
   if (!isAuthenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return location.pathname === '/login'
+      ? <LoginScreen onLogin={handleLogin} />
+      : <Navigate to="/login" replace />;
+  }
+
+  if (location.pathname === '/login') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (
