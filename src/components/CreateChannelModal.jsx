@@ -130,12 +130,31 @@ export default function CreateChannelModal({ onClose }) {
                 onChange={(e) => setAvatar(e.target.value)}
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-base"
               >
-                <option value="🔥">🔥 Fire</option>
-                <option value="🏆">🏆 Trophy</option>
-                <option value="🤝">🤝 Kindness</option>
-                <option value="🎬">🎬 Cinema</option>
-                <option value="🚀">🚀 Tech</option>
-                <option value="🎮">🎮 Gaming</option>
+               <option value="📦">📦 Compilations</option>
+<option value="📖">📖 Stories</option>
+<option value="🤖">🤖 AI Content</option>
+<option value="😂">😂 Comedy</option>
+<option value="🐾">🐾 Animals</option>
+<option value="❤️">❤️ Wholesome</option>
+<option value="🤔">🤔 Why</option>
+<option value="🏆">🏆 Sports</option>
+<option value="💰">💰 Finance</option>
+<option value="🧠">🧠 Facts</option>
+<option value="🎓">🎓 Education</option>
+<option value="🌍">🌍 Travel</option>
+<option value="🍔">🍔 Food</option>
+<option value="💪">💪 Fitness</option>
+<option value="🎥">🎥 Movies</option>
+<option value="👻">👻 Horror</option>
+<option value="🔥">🔥 Viral</option>
+<option value="🛠️">🛠️ DIY</option>
+<option value="🚗">🚗 Automotive</option>
+<option value="🏗️">🏗️ Construction</option>
+<option value="🕵️">🕵️ Mystery</option>
+<option value="💼">💼 Business</option>
+<option value="⚡">⚡ Motivation</option>
+<option value="🧩">🧩 Challenges</option>
+<option value="🎭">🎭 Drama</option>
               </select>
             </div>
           </div>

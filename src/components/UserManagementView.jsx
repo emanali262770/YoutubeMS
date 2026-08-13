@@ -53,7 +53,14 @@ export default function UserManagementView() {
   const [accessError, setAccessError] = useState('');
   const [isSavingAccess, setIsSavingAccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordManuallyEdited, setPasswordManuallyEdited] = useState(false);
+  const [passwordRandomNumber, setPasswordRandomNumber] = useState(null);
 
+  // Random 2 digit password number
+  const generateTwoDigitNumber = () => {
+  return Math.floor(Math.random() * 90) + 10;
+  };
+  
   const tableUsers = apiUsers;
   const canManageUsers = isAdmin || String(currentUser?.role || '').toLowerCase() === 'subadmin';
 
@@ -145,10 +152,14 @@ export default function UserManagementView() {
     loadUsers();
   }, []);
 
-  const handleOpenAdd = () => {
+   const handleOpenAdd = () => {
     setFullName('');
     setEmail('');
     setPassword('');
+    setPasswordManuallyEdited(false);
+    setPasswordRandomNumber(generateTwoDigitNumber());
+    setShowPassword(false);
+  
     setRole('subadmin');
     setStatus('Active');
     setSelectedChannelIds([channels[0]?.id || '']);
@@ -156,6 +167,32 @@ export default function UserManagementView() {
     setShowAddModal(true);
   };
 
+    const handleEmailChange = (e) => {
+    const value = e.target.value;
+  
+    setEmail(value);
+  
+    if (passwordManuallyEdited) {
+      return;
+    }
+  
+    const emailUsername = value.split('@')[0].trim();
+  
+    if (!emailUsername) {
+      setPassword('');
+      return;
+    }
+  
+    const randomNumber =
+      passwordRandomNumber ?? generateTwoDigitNumber();
+  
+    if (passwordRandomNumber === null) {
+      setPasswordRandomNumber(randomNumber);
+    }
+  
+    setPassword(`${emailUsername}${randomNumber}`);
+  };
+  
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!fullName.trim() || !email.trim() || !password.trim()) return;
@@ -447,7 +484,7 @@ export default function UserManagementView() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleCreateUser}  utoComplete="off" className="p-6 space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
@@ -467,12 +504,14 @@ export default function UserManagementView() {
                   <label className="block font-bold text-slate-700 mb-1">
                     Email Address <span className="text-red-500">*</span>
                   </label>
-                  <input
+                 <input
                     type="email"
                     required
+                    name="new-user-email"
+                    autoComplete="off"
                     placeholder="user@ytms.app"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={handleEmailChange}
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
                   />
                 </div>
@@ -482,11 +521,17 @@ export default function UserManagementView() {
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Password</label>
                   <div className="relative">
-                    <input
+                 <input
                       type={showPassword ? 'text' : 'password'}
                       required
+                      name="new-user-password"
+                      autoComplete="new-password"
+                      placeholder="Auto generated from email"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setPasswordManuallyEdited(true);
+                      }}
                       className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg pr-9"
                     />
                     <button
