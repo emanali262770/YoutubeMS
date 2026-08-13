@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 10;
+const COMPLETED_ROLE_ORDER = ['script_writer', 'editor', 'uploader'];
 
 export default function ContentManagementView({
   selectedChannelFilter,
@@ -61,15 +62,80 @@ export default function ContentManagementView({
   const isAdminOrSubadmin = isAdmin || normalizedRole === 'subadmin';
   const showAdminCompletedTable = isCompletedTab && isAdminOrSubadmin;
   const showActionsColumn = !showAdminCompletedTable;
-  const tableColSpan = showAdminCompletedTable ? 8 : isCompletedTab ? 11 : 8;
+  const tableColSpan = showAdminCompletedTable ? 7 : isCompletedTab ? 11 : 8;
   const canModifyContent = !['editor', 'uploader'].includes(normalizedRole);
   const filteredContent = isCompletedTab ? contentList : accessibleContent;
-  const displayCount = isCompletedTab ? contentCount : filteredContent.length;
-  const totalPages = Math.max(1, Math.ceil(filteredContent.length / ITEMS_PER_PAGE));
-  const shouldShowPagination = filteredContent.length > ITEMS_PER_PAGE;
+  const groupedCompletedContent = useMemo(() => {
+    if (!showAdminCompletedTable) return [];
+
+    const grouped = new Map();
+
+    filteredContent.forEach((item) => {
+      const channel = item.channel || channels.find((c) => c.id === item.channelId);
+      const contentId = item.contentId || item.id;
+      const groupKey = contentId || `${item.title || 'untitled'}-${item.sourceUrl || item.url || ''}`;
+      const stageRole = String(item.role || item.completedStage || '').toLowerCase();
+      const completedByUser = typeof item.completedBy === 'object'
+        ? item.completedBy
+        : contentOptionUsers.find((u) => u.id === item.completedBy);
+      const stage = {
+        role: stageRole,
+        roleName: item.roleName || item.completedByRole || item.role || 'N/A',
+        name: item.userName || item.completedByName || completedByUser?.fullName || completedByUser?.name || completedByUser?.email || 'N/A',
+        startAt: item.completionStartAt || item.startDateTime || item.startedAt || item.createdAt || item.createdDate,
+        endAt: item.completionEndAt || item.endDateTime || item.endedAt || item.completedAt || item.updatedAt || item.updatedDate,
+        duration: item.totalCompletionDuration || 'N/A',
+        seconds: Number(item.totalCompletionSeconds)
+      };
+
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          ...item,
+          rowId: groupKey,
+          contentId,
+          channelName: item.channelName || channel?.name || channel?.channelName || 'Unknown Channel',
+          sourceUrl: item.sourceUrl || item.url || '',
+          stages: []
+        });
+      }
+
+      grouped.get(groupKey).stages.push(stage);
+    });
+
+    return Array.from(grouped.values()).map((item) => {
+      const sortedStages = [...item.stages].sort((a, b) => {
+        const aIndex = COMPLETED_ROLE_ORDER.indexOf(a.role);
+        const bIndex = COMPLETED_ROLE_ORDER.indexOf(b.role);
+        return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
+      });
+      const startDates = sortedStages
+        .map((stage) => new Date(stage.startAt))
+        .filter((date) => !Number.isNaN(date.getTime()));
+      const endDates = sortedStages
+        .map((stage) => new Date(stage.endAt))
+        .filter((date) => !Number.isNaN(date.getTime()));
+      const totalSeconds = sortedStages.reduce((sum, stage) => (
+        Number.isFinite(stage.seconds) ? sum + stage.seconds : sum
+      ), 0);
+
+      return {
+        ...item,
+        stages: sortedStages,
+        groupedStartAt: startDates.length ? new Date(Math.min(...startDates)) : '',
+        groupedEndAt: endDates.length ? new Date(Math.max(...endDates)) : '',
+        groupedDuration: totalSeconds > 0
+          ? `${Math.max(1, Math.round(totalSeconds / 60))} minute${Math.round(totalSeconds / 60) === 1 ? '' : 's'}`
+          : `${sortedStages.length} stage${sortedStages.length === 1 ? '' : 's'}`
+      };
+    });
+  }, [showAdminCompletedTable, filteredContent, channels, contentOptionUsers]);
+  const tableContent = showAdminCompletedTable ? groupedCompletedContent : filteredContent;
+  const displayCount = showAdminCompletedTable ? groupedCompletedContent.length : isCompletedTab ? contentCount : filteredContent.length;
+  const totalPages = Math.max(1, Math.ceil(tableContent.length / ITEMS_PER_PAGE));
+  const shouldShowPagination = tableContent.length > ITEMS_PER_PAGE;
   const paginationStart = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedContent = filteredContent.slice(paginationStart, paginationStart + ITEMS_PER_PAGE);
-  const paginationEnd = Math.min(paginationStart + ITEMS_PER_PAGE, filteredContent.length);
+  const paginatedContent = tableContent.slice(paginationStart, paginationStart + ITEMS_PER_PAGE);
+  const paginationEnd = Math.min(paginationStart + ITEMS_PER_PAGE, tableContent.length);
   const filterParams = useMemo(() => ({
     search: searchQuery || undefined,
     channel: selectedChannelFilter,
@@ -254,18 +320,17 @@ export default function ContentManagementView({
       {/* Content Display */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className={`${showAdminCompletedTable ? 'min-w-[1320px]' : isCompletedTab ? 'min-w-[1560px]' : 'min-w-[1120px]'} w-full text-left text-xs table-fixed border-collapse`}>
+            <table className={`${showAdminCompletedTable ? 'min-w-[1360px]' : isCompletedTab ? 'min-w-[1560px]' : 'min-w-[1120px]'} w-full text-left text-xs table-fixed border-collapse`}>
               <colgroup>
                 {showAdminCompletedTable ? (
                   <>
                     <col className="w-[160px]" />
                     <col className="w-[220px]" />
                     <col className="w-[320px]" />
-                    <col className="w-[110px]" />
-                    <col className="w-[140px]" />
+                    <col className="w-[260px]" />
                     <col className="w-[170px]" />
                     <col className="w-[170px]" />
-                    <col className="w-[150px]" />
+                    <col className="w-[160px]" />
                   </>
                 ) : (
                   <>
@@ -294,8 +359,7 @@ export default function ContentManagementView({
                       <th className="py-3 px-4 align-middle">Channel Name</th>
                       <th className="py-3 px-4 align-middle">URL</th>
                       <th className="py-3 px-4 align-middle">Title</th>
-                      <th className="py-3 px-4 align-middle">Role</th>
-                      <th className="py-3 px-4 align-middle">Name</th>
+                      <th className="py-3 px-4 align-middle">Team Work</th>
                       <th className="py-3 px-4 align-middle">Start Date Time</th>
                       <th className="py-3 px-4 align-middle">End Date Time</th>
                       <th className="py-3 px-4 align-middle">Total Duration</th>
@@ -338,7 +402,7 @@ export default function ContentManagementView({
                       Loading content...
                     </td>
                   </tr>
-                ) : !contentError && filteredContent.length === 0 ? (
+                ) : !contentError && tableContent.length === 0 ? (
                   <tr>
                     <td colSpan={tableColSpan} className="py-12 text-center text-slate-400">
                       No content items found matching current filters.
@@ -354,10 +418,6 @@ export default function ContentManagementView({
                     const completedAt = item.completedAt
                       ? new Date(item.completedAt).toLocaleString()
                       : '';
-                    const completedByName = item.userName || item.completedByName || getUserDisplayName(completedByUser);
-                    const completedByRole = item.roleName || item.completedByRole || item.role || completedByUser?.role || 'N/A';
-                    const completionStartAt = formatDateTime(item.completionStartAt || item.createdAt || item.createdDate);
-                    const completionEndAt = formatDateTime(item.completionEndAt || item.completedAt || item.updatedAt || item.updatedDate);
                     const channelName = item.channelName || channel?.name || channel?.channelName || 'Unknown Channel';
                     const detailsId = item.contentId || item.id;
                     const canOpenDetails = !showAdminCompletedTable;
@@ -397,23 +457,33 @@ export default function ContentManagementView({
                               </div>
                             </td>
                             <td className="py-4 px-4 align-top">
-                              <span className="inline-flex max-w-full rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
-                                <span className="truncate">{completedByRole}</span>
-                              </span>
-                            </td>
-                            <td className="py-4 px-4 align-top">
-                              <div className="truncate font-semibold text-slate-800" title={completedByName || 'N/A'}>
-                                {completedByName || 'N/A'}
+                              <div className="grid grid-cols-1 gap-1.5">
+                                {item.stages?.map((stage) => (
+                                  <div
+                                    key={`${item.rowId}-${stage.role}-${stage.name}`}
+                                    className="flex min-w-0 items-center gap-2"
+                                  >
+                                    <span className="inline-flex w-24 shrink-0 justify-center rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                                      <span className="truncate">{stage.roleName}</span>
+                                    </span>
+                                    <span className="truncate font-semibold text-slate-800" title={stage.name}>
+                                      {stage.name}
+                                    </span>
+                                    <span className="shrink-0 text-[10px] text-slate-400">
+                                      {stage.duration}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             </td>
                             <td className="py-4 px-4 align-top text-slate-500 whitespace-nowrap">
-                              {completionStartAt || 'N/A'}
+                              {formatDateTime(item.groupedStartAt) || 'N/A'}
                             </td>
                             <td className="py-4 px-4 align-top text-slate-500 whitespace-nowrap">
-                              {completionEndAt || 'N/A'}
+                              {formatDateTime(item.groupedEndAt) || 'N/A'}
                             </td>
                             <td className="py-4 px-4 align-top font-semibold text-slate-700">
-                              {item.totalCompletionDuration || 'N/A'}
+                              {item.groupedDuration || 'N/A'}
                             </td>
                           </>
                         )}
@@ -558,7 +628,7 @@ export default function ContentManagementView({
           {shouldShowPagination && (
             <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
               <div className="font-medium text-slate-500">
-                Showing {paginationStart + 1}-{paginationEnd} of {filteredContent.length}
+                Showing {paginationStart + 1}-{paginationEnd} of {tableContent.length}
               </div>
 
               <div className="flex items-center justify-end gap-2">
