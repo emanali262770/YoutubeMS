@@ -128,12 +128,17 @@ export function AppProvider({ children }) {
     const assignedUser = item?.assignedUser || item?.assignedTo || item?.assignedUserId;
     const channelId = typeof channel === 'object' ? channel?.id || channel?._id : channel;
     const assignedUserId = typeof assignedUser === 'object' ? assignedUser?.id || assignedUser?._id : assignedUser;
+    const id = item?.id || item?._id || item?.contentId;
+    const roleLabel = item?.roleName || item?.completedByRole || item?.role || '';
+    const userName = item?.userName || item?.completedByName || item?.name || '';
 
     return {
-      id: item?.id || item?._id,
+      id,
+      rowId: item?.rowId || `${id || 'content'}-${item?.role || item?.completedStage || 'row'}-${item?.userId || item?.completedBy || userName || ''}`,
+      contentId: item?.contentId || id,
       channelId,
       title: item?.title || item?.videoTitle || item?.workingTitle || 'Untitled Content',
-      sourceUrl: item?.sourceUrl || '',
+      sourceUrl: item?.sourceUrl || item?.url || '',
       sourceTitle: item?.sourceTitle || '',
       sourceCreator: item?.sourceCreator || '',
       status: item?.status || 'Pending',
@@ -151,7 +156,16 @@ export function AppProvider({ children }) {
       updatedAt: item?.updatedAt || '', // Keep original API field
       completedStage: item?.completedStage || '',
       completedAt: item?.completedAt || '',
-      completedBy: item?.completedBy || null
+      completedBy: item?.completedBy || null,
+      completedByName: userName,
+      completedByRole: roleLabel,
+      role: item?.role || '',
+      roleName: item?.roleName || '',
+      userName,
+      channelName: item?.channelName || '',
+      completionStartAt: item?.completionStartAt || item?.startDateTime || item?.startedAt || item?.startAt || item?.startDate || '',
+      completionEndAt: item?.completionEndAt || item?.endDateTime || item?.endedAt || item?.endAt || item?.endDate || item?.completedAt || '',
+      totalCompletionDuration: item?.totalCompletionDuration || item?.completionDuration || item?.totalDuration || item?.duration || ''
     };
   };
 
@@ -202,8 +216,13 @@ export function AppProvider({ children }) {
     const response = isCompletedTab
       ? await getCompletedContents(cleanedFilters)
       : await getContents(cleanedFilters);
-    const items = response?.contents || response?.content || response?.data?.contents || response?.data || response;
-    const count = response?.count ?? response?.data?.count ?? (Array.isArray(items) ? items.length : 0);
+    const shouldUseCompletionRows = isCompletedTab && (isAdmin || String(currentUser?.role || '').toLowerCase() === 'subadmin');
+    const items = shouldUseCompletionRows
+      ? response?.completionRows || response?.data?.completionRows || response?.contents || response?.data?.contents || []
+      : response?.contents || response?.content || response?.data?.contents || response?.data || response;
+    const count = shouldUseCompletionRows
+      ? (Array.isArray(items) ? items.length : 0)
+      : response?.count ?? response?.data?.count ?? (Array.isArray(items) ? items.length : 0);
 
     setContentList(Array.isArray(items) ? items.map(formatContentItem) : []);
     setContentCount(Number.isFinite(Number(count)) ? Number(count) : 0);
